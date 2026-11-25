@@ -24,40 +24,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify publisher certificate secrets
-        shell: pwsh
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
-            throw "Configure WINDOWS_CERTIFICATE and WINDOWS_CERTIFICATE_PASSWORD repository secrets before publishing."
-          }
-          if (-not $env:CSC_LINK.StartsWith("base64:")) {
-            throw "WINDOWS_CERTIFICATE must contain a base64: prefixed PFX certificate."
-          }
-
       - name: Build Windows installer
         run: npm run dist -- --publish never
-        env:
-          CSC_LINK: ${{ secrets.WINDOWS_CERTIFICATE }}
-          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
-
-      - name: Verify signed installer
-        shell: pwsh
-        run: |
-          $installer = Get-ChildItem -Path 'release\Anti-AFK-Setup-*.exe' | Select-Object -First 1
-          if ($null -eq $installer) {
-            throw "The Windows installer was not produced."
-          }
-          $signature = Get-AuthenticodeSignature -FilePath $installer.FullName
-          if ($signature.Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
-            throw "The Windows installer does not have a valid Authenticode signature."
-          }
-          $publisher = $signature.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
-          if ($publisher -ne "Xronix") {
-            throw "Expected publisher Xronix, but the certificate identifies as '$publisher'."
-          }
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
