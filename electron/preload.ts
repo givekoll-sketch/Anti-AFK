@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("antiAfk", {
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   openRepository: () => ipcRenderer.invoke("app:open-repository"),
+  openTelegram: () => ipcRenderer.invoke("app:open-telegram"),
+  getLogs: () => ipcRenderer.invoke("logs:list"),
   onStatus: (callback: (status: RuntimeStatus) => void) => {
     const listener = (_event: Electron.IpcRendererEvent, status: RuntimeStatus) => callback(status);
     ipcRenderer.on("afk:status-changed", listener);
@@ -22,6 +24,11 @@ contextBridge.exposeInMainWorld("antiAfk", {
     const listener = (_event: Electron.IpcRendererEvent, state: UpdateState) => callback(state);
     ipcRenderer.on("updates:state", listener);
     return () => ipcRenderer.removeListener("updates:state", listener);
+  },
+  onLog: (callback: (entry: AppLogEntry) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, entry: AppLogEntry) => callback(entry);
+    ipcRenderer.on("logs:entry", listener);
+    return () => ipcRenderer.removeListener("logs:entry", listener);
   }
 });
 
@@ -43,6 +50,7 @@ export type UpdateState = {
   message: string;
   version?: string;
 };
+export type AppLogEntry = { timestamp: string; level: "info" | "warning" | "error"; message: string };
 
 declare global {
   interface Window {
@@ -59,8 +67,11 @@ declare global {
       downloadUpdate: () => Promise<void>;
       installUpdate: () => Promise<void>;
       openRepository: () => Promise<void>;
+      openTelegram: () => Promise<void>;
+      getLogs: () => Promise<AppLogEntry[]>;
       onStatus: (callback: (status: RuntimeStatus) => void) => () => void;
       onUpdate: (callback: (state: UpdateState) => void) => () => void;
+      onLog: (callback: (entry: AppLogEntry) => void) => () => void;
     };
   }
 }

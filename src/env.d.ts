@@ -13,6 +13,7 @@ type UpdateState = {
   message: string;
   version?: string;
 };
+type AppLogEntry = { timestamp: string; level: "info" | "warning" | "error"; message: string };
 
 declare global {
   interface Window {
@@ -29,8 +30,11 @@ declare global {
       downloadUpdate: () => Promise<void>;
       installUpdate: () => Promise<void>;
       openRepository: () => Promise<void>;
+      openTelegram: () => Promise<void>;
+      getLogs: () => Promise<AppLogEntry[]>;
       onStatus: (callback: (status: RuntimeStatus) => void) => () => void;
       onUpdate: (callback: (state: UpdateState) => void) => () => void;
+      onLog: (callback: (entry: AppLogEntry) => void) => () => void;
     };
   }
 }
