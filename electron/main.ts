@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, globalShortcut, shell } from "electron";
+import { app, BrowserWindow, ipcMain, globalShortcut, shell, screen } from "electron";
 import { autoUpdater } from "electron-updater";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -7,19 +7,42 @@ import path from "node:path";
 
 const execFileAsync = promisify(execFile);
 let mainWindow: BrowserWindow | null = null;
+let overlayWindow: BrowserWindow | null = null;
 let timer: NodeJS.Timeout | null = null;
-let runtime = { running: false, paused: false, message: "Ожидание запуска", lastActionAt: null as number | null };
+let runtime = {
+  running: false,
+  paused: false,
+  message: "Ожидание запуска",
+  lastActionAt: null as number | null,
+  nextActionAt: null as number | null,
+  intervalMs: 300000
+};
 let activeConfig: any = null;
 let settingsPath = "";
 type UpdateStatus = "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
 type UpdateState = { status: UpdateStatus; message: string; version?: string };
 type LogLevel = "info" | "warning" | "error";
 type AppLogEntry = { timestamp: string; level: LogLevel; message: string };
+type ActionName = "camera" | "jump" | "walk";
+type PluginManifest = {
+  id: string;
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  actions: ActionName[];
+};
+type InstalledPlugin = PluginManifest & { enabled: boolean };
+type CatalogPlugin = PluginManifest & { downloadUrl: string };
 let updateState: UpdateState = { status: "idle", message: "Проверка обновлений ещё не выполнялась" };
 let logPath = "";
+let pluginDirectory = "";
 let lastFocusWarningAt = 0;
 let lastActionErrorAt = 0;
 type ActionAttempt = "performed" | "unfocused" | "error" | "inactive";
+const pluginCatalogUrl = "https://raw.githubusercontent.com/givekoll-sketch/Anti-AFK/main/plugins/catalog.json";
+const pluginPackagePrefix = "https://raw.githubusercontent.com/givekoll-sketch/Anti-AFK/main/plugins/packages/";
+const allowedActions = new Set<ActionName>(["camera", "jump", "walk"]);
 
 function writeLog(level: LogLevel, message: string) {
   const entry: AppLogEntry = { timestamp: new Date().toISOString(), level, message };
@@ -53,6 +76,7 @@ function readLogs(): AppLogEntry[] {
 
 function publishStatus() {
   mainWindow?.webContents.send("afk:status-changed", runtime);
+  overlayWindow?.webContents.send("afk:status-changed", runtime);
 }
 
 function publishUpdate(status: UpdateStatus, message: string, version?: string) {
@@ -62,6 +86,132 @@ function publishUpdate(status: UpdateStatus, message: string, version?: string) 
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isPluginManifest(value: unknown): value is PluginManifest {
+  if (!value || typeof value !== "object") return false;
+  const plugin = value as Record<string, unknown>;
+  return typeof plugin.id === "string" && /^[a-z0-9][a-z0-9-]{1,39}$/.test(plugin.id) &&
+    typeof plugin.name === "string" && plugin.name.length <= 60 &&
+    typeof plugin.version === "string" && /^\d+\.\d+\.\d+$/.test(plugin.version) &&
+    typeof plugin.author === "string" && plugin.author.length <= 60 &&
+    typeof plugin.description === "string" && plugin.description.length <= 500 &&
+    Array.isArray(plugin.actions) && plugin.actions.length > 0 &&
+    plugin.actions.every(action => typeof action === "string" && allowedActions.has(action as ActionName));
+}
+
+function isCatalogPlugin(value: unknown): value is CatalogPlugin {
+  return isPluginManifest(value) && typeof (value as CatalogPlugin).downloadUrl === "string" &&
+    (value as CatalogPlugin).downloadUrl.startsWith(pluginPackagePrefix) &&
+    (value as CatalogPlugin).downloadUrl.endsWith(".json");
+}
+
+async function fetchJson(url: string): Promise<unknown> {
+  const response = await fetch(url, { signal: AbortSignal.timeout(10000), redirect: "error" });
+  if (!response.ok) throw new Error(`HTTP ${response.status} при загрузке каталога плагинов`);
+  const body = await response.text();
+  if (body.length > 512 * 1024) throw new Error("Ответ каталога плагинов превышает 512 КБ");
+  return JSON.parse(body);
+}
+
+function listInstalledPlugins(): InstalledPlugin[] {
+  fs.mkdirSync(pluginDirectory, { recursive: true });
+  const plugins: InstalledPlugin[] = [];
+  for (const file of fs.readdirSync(pluginDirectory)) {
+    if (!/^[a-z0-9][a-z0-9-]{1,39}\.json$/.test(file)) continue;
+    const filePath = path.join(pluginDirectory, file);
+    try {
+      const saved = JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+      if (!saved || typeof saved !== "object") throw new Error("Неверный формат записи плагина");
+      const entry = saved as Record<string, unknown>;
+      if (!isPluginManifest(entry.manifest) || entry.manifest.id !== file.slice(0, -5) || typeof entry.enabled !== "boolean") {
+        throw new Error("Манифест плагина не прошёл проверку");
+      }
+      plugins.push({ ...entry.manifest, enabled: entry.enabled });
+    } catch (error) {
+      writeLog("error", `Не удалось прочитать плагин ${file}: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  }
+  return plugins.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function getEnabledPluginActions(): ActionName[] {
+  return listInstalledPlugins().filter(plugin => plugin.enabled).flatMap(plugin => plugin.actions);
+}
+
+async function loadPluginCatalog(): Promise<{ plugins: CatalogPlugin[]; warning?: string }> {
+  try {
+    const response = await fetchJson(pluginCatalogUrl);
+    if (!response || typeof response !== "object" || !Array.isArray((response as { plugins?: unknown }).plugins)) {
+      throw new Error("Каталог плагинов имеет неверный формат");
+    }
+    const plugins = (response as { plugins: unknown[] }).plugins;
+    if (!plugins.every(isCatalogPlugin)) throw new Error("Каталог содержит некорректный манифест");
+    return { plugins, warning: "" };
+  } catch (error) {
+    writeLog("warning", `Не удалось обновить каталог плагинов: ${getErrorMessage(error)}`);
+    const fallbackPath = path.join(app.getAppPath(), "plugins", "catalog.json");
+    try {
+      const fallback = JSON.parse(fs.readFileSync(fallbackPath, "utf8")) as { plugins?: unknown };
+      if (!Array.isArray(fallback.plugins) || !fallback.plugins.every(isCatalogPlugin)) {
+        throw new Error("Локальный каталог плагинов имеет неверный формат");
+      }
+      return {
+        plugins: fallback.plugins,
+        warning: "Не удалось подключиться к сети; показан встроенный каталог"
+      };
+    } catch (fallbackError) {
+      writeLog("error", `Не удалось загрузить встроенный каталог плагинов: ${getErrorMessage(fallbackError)}`);
+      throw fallbackError;
+    }
+  }
+}
+
+async function installPlugin(pluginId: string): Promise<InstalledPlugin[]> {
+  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(pluginId)) throw new Error("Некорректный идентификатор плагина");
+  const catalog = await loadPluginCatalog();
+  const entry = catalog.plugins.find(plugin => plugin.id === pluginId);
+  if (!entry || entry.downloadUrl !== `${pluginPackagePrefix}${pluginId}.json`) {
+    throw new Error("Плагин отсутствует в официальном каталоге");
+  }
+  let packageData: unknown;
+  try {
+    packageData = await fetchJson(entry.downloadUrl);
+  } catch (error) {
+    const fallbackPath = path.join(app.getAppPath(), "plugins", "packages", `${pluginId}.json`);
+    try {
+      packageData = JSON.parse(fs.readFileSync(fallbackPath, "utf8")) as unknown;
+      writeLog("warning", `Пакет плагина ${pluginId} загружен из встроенного каталога после ошибки сети: ${getErrorMessage(error)}`);
+    } catch (fallbackError) {
+      writeLog("error", `Не удалось загрузить пакет плагина ${pluginId}: ${getErrorMessage(fallbackError)}`);
+      throw new Error(`Не удалось загрузить пакет плагина: ${getErrorMessage(error)}; встроенный пакет: ${getErrorMessage(fallbackError)}`);
+    }
+  }
+  if (!isPluginManifest(packageData) || packageData.id !== pluginId) {
+    throw new Error("Загруженный пакет плагина не прошёл проверку");
+  }
+  fs.mkdirSync(pluginDirectory, { recursive: true });
+  const filePath = path.join(pluginDirectory, `${pluginId}.json`);
+  const currentlyInstalled = listInstalledPlugins().find(plugin => plugin.id === pluginId);
+  const temporaryPath = `${filePath}.tmp`;
+  fs.writeFileSync(temporaryPath, JSON.stringify({
+    manifest: packageData,
+    enabled: currentlyInstalled?.enabled ?? true
+  }), "utf8");
+  fs.renameSync(temporaryPath, filePath);
+  writeLog("info", `Установлен плагин «${packageData.name}» ${packageData.version}`);
+  return listInstalledPlugins();
+}
+
+function setPluginEnabled(pluginId: string, enabled: boolean): InstalledPlugin[] {
+  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(pluginId)) throw new Error("Некорректный идентификатор плагина");
+  const filePath = path.join(pluginDirectory, `${pluginId}.json`);
+  const saved = JSON.parse(fs.readFileSync(filePath, "utf8")) as { manifest: unknown; enabled: boolean };
+  if (!isPluginManifest(saved.manifest)) throw new Error("Манифест установленного плагина не прошёл проверку");
+  fs.writeFileSync(filePath, JSON.stringify({ manifest: saved.manifest, enabled }), "utf8");
+  writeLog("info", `${enabled ? "Включён" : "Выключен"} плагин «${saved.manifest.name}»`);
+  return listInstalledPlugins();
 }
 
 function createWindow() {
@@ -87,7 +237,54 @@ function createWindow() {
   } else {
     mainWindow.loadFile(path.join(__dirname, "../dist/index.html"));
   }
-  mainWindow.on("closed", () => { mainWindow = null; });
+  mainWindow.on("closed", () => {
+    mainWindow = null;
+    closeOverlayWindow();
+  });
+}
+
+function showOverlayWindow() {
+  if (overlayWindow) {
+    overlayWindow.showInactive();
+    publishStatus();
+    return;
+  }
+  const { workArea } = screen.getPrimaryDisplay();
+  overlayWindow = new BrowserWindow({
+    x: workArea.x + workArea.width - 270,
+    y: workArea.y + 48,
+    width: 250,
+    height: 94,
+    frame: false,
+    transparent: true,
+    backgroundColor: "#00000000",
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    focusable: false,
+    hasShadow: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true
+    }
+  });
+  overlayWindow.on("closed", () => { overlayWindow = null; });
+  const loadOverlay = app.isPackaged
+    ? overlayWindow.loadFile(path.join(__dirname, "../dist/index.html"), { query: { overlay: "1" } })
+    : overlayWindow.loadURL("http://127.0.0.1:5173/?overlay=1");
+  void loadOverlay.then(() => overlayWindow?.showInactive()).catch(error => {
+    writeLog("error", `Не удалось открыть таймер поверх игры: ${getErrorMessage(error)}`);
+  });
+  overlayWindow.setAlwaysOnTop(true);
+}
+
+function closeOverlayWindow() {
+  if (!overlayWindow) return;
+  const currentOverlay = overlayWindow;
+  overlayWindow = null;
+  currentOverlay.close();
 }
 
 async function runPowerShell(script: string): Promise<string> {
@@ -128,7 +325,18 @@ async function detectMinecraftWindows() {
 async function performActions(): Promise<ActionAttempt> {
   if (!activeConfig || !runtime.running || runtime.paused) return "inactive";
   const targetPid = Number(activeConfig.target.pid);
-  const actions: string[] = activeConfig.actions;
+  let actions: ActionName[];
+  try {
+    actions = [...new Set<ActionName>([...activeConfig.actions, ...getEnabledPluginActions()])];
+  } catch (error) {
+    runtime.message = "Не удалось загрузить список плагинов";
+    if (Date.now() - lastActionErrorAt > 30000) {
+      writeLog("error", `Не удалось получить действия плагинов: ${getErrorMessage(error)}`);
+      lastActionErrorAt = Date.now();
+    }
+    publishStatus();
+    return "error";
+  }
   if (!Number.isInteger(targetPid) || targetPid <= 0 || !actions.length) {
     runtime.message = "Не удалось определить окно Minecraft";
     writeLog("error", "Действие отменено: неверный PID окна или пустой список действий");
@@ -139,32 +347,67 @@ async function performActions(): Promise<ActionAttempt> {
   // Inputs are deliberately sent only if the selected Minecraft window is foreground.
   const actionLines: string[] = [];
   if (actions.includes("jump")) {
-    actionLines.push("[AntiAfkNative]::keybd_event(0x20, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [AntiAfkNative]::keybd_event(0x20, 0, 2, [UIntPtr]::Zero)");
+    actionLines.push(`if (![AntiAfkNative]::SendKey([UInt32]${targetPid}, [UInt16]0x20, $false)) { exit 3 }; Start-Sleep -Milliseconds 100; [AntiAfkNative]::SendKey([UInt32]${targetPid}, [UInt16]0x20, $true)`);
   }
   if (actions.includes("walk")) {
-    actionLines.push("[AntiAfkNative]::keybd_event(0x57, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 450; [AntiAfkNative]::keybd_event(0x57, 0, 2, [UIntPtr]::Zero)");
+    actionLines.push(`if (![AntiAfkNative]::SendKey([UInt32]${targetPid}, [UInt16]0x57, $false)) { exit 3 }; Start-Sleep -Milliseconds 300; [AntiAfkNative]::SendKey([UInt32]${targetPid}, [UInt16]0x57, $true)`);
   }
   if (actions.includes("camera")) {
-    actionLines.push("[AntiAfkNative]::mouse_event(0x0001, 14, 0, 0, [UIntPtr]::Zero); Start-Sleep -Milliseconds 100; [AntiAfkNative]::mouse_event(0x0001, -14, 0, 0, [UIntPtr]::Zero)");
+    actionLines.push(`if (![AntiAfkNative]::MoveMouse([UInt32]${targetPid}, 14, 0)) { exit 3 }; Start-Sleep -Milliseconds 60; [AntiAfkNative]::MoveMouse([UInt32]${targetPid}, -14, 0)`);
   }
 
   const script = `
     Add-Type -TypeDefinition @'
     using System;
+    using System.ComponentModel;
     using System.Runtime.InteropServices;
     public static class AntiAfkNative {
       [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
       [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
-      [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
-      [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
+      [DllImport("user32.dll", SetLastError=true)] private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+      [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public InputUnion data; }
+      [StructLayout(LayoutKind.Explicit)] public struct InputUnion {
+        [FieldOffset(0)] public KEYBDINPUT keyboard;
+        [FieldOffset(0)] public MOUSEINPUT mouse;
+      }
+      [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT {
+        public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public UIntPtr dwExtraInfo;
+      }
+      [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT {
+        public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public UIntPtr dwExtraInfo;
+      }
+      private static bool IsForeground(uint expectedPid) {
+        uint foregroundPid;
+        GetWindowThreadProcessId(GetForegroundWindow(), out foregroundPid);
+        return foregroundPid == expectedPid;
+      }
+      private static void Send(INPUT input) {
+        if (SendInput(1, new INPUT[] { input }, Marshal.SizeOf(typeof(INPUT))) != 1)
+          throw new Win32Exception(Marshal.GetLastWin32Error());
+      }
+      public static bool SendKey(uint pid, ushort key, bool keyUp) {
+        if (!keyUp && !IsForeground(pid)) return false;
+        INPUT input = new INPUT();
+        input.type = 1;
+        input.data.keyboard.wVk = key;
+        input.data.keyboard.dwFlags = keyUp ? 2u : 0u;
+        Send(input);
+        return true;
+      }
+      public static bool MoveMouse(uint pid, int dx, int dy) {
+        if (!IsForeground(pid)) return false;
+        INPUT input = new INPUT();
+        input.type = 0;
+        input.data.mouse.dx = dx;
+        input.data.mouse.dy = dy;
+        input.data.mouse.dwFlags = 1;
+        Send(input);
+        return true;
+      }
     }
 '@
     $targetProcess = Get-Process -Id ${targetPid} -ErrorAction SilentlyContinue
     if (!$targetProcess -or $targetProcess.ProcessName -notmatch 'java|Minecraft') { exit 4 }
-    $handle = [AntiAfkNative]::GetForegroundWindow()
-    [UInt32]$foregroundPid = 0
-    [void][AntiAfkNative]::GetWindowThreadProcessId($handle, [ref]$foregroundPid)
-    if ($foregroundPid -ne [UInt32]${targetPid}) { exit 3 }
     ${actionLines.join("; ")}
   `;
   let result: ActionAttempt;
@@ -203,7 +446,14 @@ function stopRuntime() {
   if (timer) clearTimeout(timer);
   timer = null;
   if (runtime.running) writeLog("info", "Автоматические действия остановлены");
-  runtime = { running: false, paused: false, message: "Остановлено", lastActionAt: runtime.lastActionAt };
+  runtime = {
+    ...runtime,
+    running: false,
+    paused: false,
+    message: "Остановлено",
+    nextActionAt: null
+  };
+  closeOverlayWindow();
   publishStatus();
 }
 
@@ -214,12 +464,26 @@ function beginRuntimeLoop() {
   const runCycle = async () => {
     timer = null;
     if (!activeConfig || !runtime.running || runtime.paused) return;
-    const attempt = await performActions();
+    let attempt: ActionAttempt;
+    try {
+      attempt = await performActions();
+    } catch (error) {
+      runtime.message = "Не удалось выполнить действие";
+      if (Date.now() - lastActionErrorAt > 30000) {
+        writeLog("error", `Ошибка цикла действий: ${getErrorMessage(error)}`);
+        lastActionErrorAt = Date.now();
+      }
+      publishStatus();
+      attempt = "error";
+    }
     if (!runtime.running || runtime.paused) return;
     const delay = attempt === "performed"
       ? Math.max(5000, Number(activeConfig.intervalMs) || 300000)
       : attempt === "unfocused" ? 2000 : 5000;
+    runtime.nextActionAt = Date.now() + delay;
+    runtime.intervalMs = delay;
     timer = setTimeout(() => { void runCycle(); }, delay);
+    publishStatus();
   };
 
   timer = setTimeout(() => { void runCycle(); }, 0);
@@ -229,6 +493,7 @@ function togglePause() {
   if (!runtime.running) return runtime;
   runtime.paused = !runtime.paused;
   runtime.message = runtime.paused ? "Пауза" : "Работа продолжена";
+  runtime.nextActionAt = null;
   writeLog("info", runtime.paused ? "Автоматические действия приостановлены" : "Автоматические действия продолжены");
   if (runtime.paused) {
     if (timer) clearTimeout(timer);
@@ -264,6 +529,7 @@ function registerHotkeys() {
 app.whenReady().then(async () => {
   settingsPath = path.join(app.getPath("userData"), "settings.json");
   logPath = path.join(app.getPath("userData"), "logs", "app.log");
+  pluginDirectory = path.join(app.getPath("userData"), "plugins");
   writeLog("info", `Anti-AFK ${app.getVersion()} запущен`);
 
   autoUpdater.autoDownload = false;
@@ -301,6 +567,45 @@ app.whenReady().then(async () => {
       throw error;
     }
   });
+  ipcMain.handle("plugins:catalog", async () => {
+    try {
+      const catalog = await loadPluginCatalog();
+      return { ...catalog, installed: listInstalledPlugins() };
+    } catch (error) {
+      writeLog("error", `Не удалось открыть каталог плагинов: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  });
+  ipcMain.handle("plugins:list", () => listInstalledPlugins());
+  ipcMain.handle("plugins:install", async (_event, pluginId: string) => {
+    try {
+      return await installPlugin(pluginId);
+    } catch (error) {
+      writeLog("error", `Не удалось установить плагин: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  });
+  ipcMain.handle("plugins:set-enabled", (_event, pluginId: string, enabled: boolean) => {
+    try {
+      if (typeof enabled !== "boolean") throw new Error("Некорректное состояние плагина");
+      return setPluginEnabled(pluginId, enabled);
+    } catch (error) {
+      writeLog("error", `Не удалось изменить состояние плагина: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  });
+  ipcMain.handle("plugins:remove", (_event, pluginId: string) => {
+    try {
+      if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(pluginId)) throw new Error("Некорректный идентификатор плагина");
+      const filePath = path.join(pluginDirectory, `${pluginId}.json`);
+      fs.unlinkSync(filePath);
+      writeLog("info", `Удалён плагин ${pluginId}`);
+      return listInstalledPlugins();
+    } catch (error) {
+      writeLog("error", `Не удалось удалить плагин: ${getErrorMessage(error)}`);
+      throw error;
+    }
+  });
   ipcMain.handle("updates:check", async () => {
     try { await autoUpdater.checkForUpdates(); }
     catch (error) { publishUpdate("error", `Не удалось проверить обновления: ${getErrorMessage(error)}`); }
@@ -325,20 +630,35 @@ app.whenReady().then(async () => {
   });
   ipcMain.handle("afk:start", async (_event, config) => {
     const targetPid = Number(config?.target?.pid);
-    if (!Number.isInteger(targetPid) || targetPid <= 0 || !Array.isArray(config.actions) || !config.actions.length) {
+    if (!Number.isInteger(targetPid) || targetPid <= 0 || !Array.isArray(config.actions) ||
+      !config.actions.length || !config.actions.every((action: unknown) =>
+        typeof action === "string" && allowedActions.has(action as ActionName))) {
       writeLog("warning", "Запуск отменён: не выбрано окно Minecraft или действие");
       return { ok: false, message: "Обновите список окон Minecraft, выберите игру и хотя бы одно действие" };
     }
     if (timer) clearTimeout(timer);
-    activeConfig = config;
-    runtime = { running: true, paused: false, message: "Запущено — ожидаем фокус Minecraft", lastActionAt: null };
+    const intervalMs = Math.max(5000, Math.min(2147480000, Number(config.intervalMs) || 300000));
+    activeConfig = { ...config, intervalMs };
+    runtime = {
+      running: true,
+      paused: false,
+      message: "Запущено — ожидаем фокус Minecraft",
+      lastActionAt: null,
+      nextActionAt: Date.now(),
+      intervalMs
+    };
     writeLog("info", `Автоматические действия запущены для окна «${config.target.title}»`);
+    showOverlayWindow();
     beginRuntimeLoop();
     publishStatus();
     return { ok: true, message: "Anti-AFK запущен" };
   });
   ipcMain.handle("afk:stop", stopRuntime);
   ipcMain.handle("afk:pause", togglePause);
+  ipcMain.handle("overlay:close", closeOverlayWindow);
+  ipcMain.handle("overlay:show", () => {
+    if (runtime.running) showOverlayWindow();
+  });
   ipcMain.handle("afk:status", () => runtime);
   ipcMain.handle("settings:save", (_event, value) => {
     try {

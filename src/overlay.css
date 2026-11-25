@@ -1,0 +1,124 @@
+:root[data-overlay="true"],
+:root[data-overlay="true"] body,
+:root[data-overlay="true"] #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.action-overlay {
+  width: 100%;
+  height: 100%;
+  padding: 11px 13px 10px;
+  overflow: hidden;
+  border: 1px solid rgba(160, 255, 200, .22);
+  border-radius: 15px;
+  color: #f1fff5;
+  background: rgba(15, 23, 19, .76);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .35), inset 0 0 24px rgba(70, 190, 115, .05);
+  backdrop-filter: blur(14px);
+  font-family: Inter, "Segoe UI", Arial, sans-serif;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.overlay-header,
+.overlay-header > span,
+.overlay-timer {
+  display: flex;
+  align-items: center;
+}
+
+.overlay-header {
+  justify-content: space-between;
+  color: rgba(223, 255, 232, .68);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 1.15px;
+}
+
+.overlay-header > span {
+  gap: 7px;
+}
+
+.overlay-led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #79eaa0;
+  box-shadow: 0 0 10px rgba(121, 234, 160, .8);
+}
+
+.overlay-led.paused {
+  background: #edbe67;
+  box-shadow: none;
+}
+
+.overlay-close {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  border: 0;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, .72);
+  background: transparent;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.overlay-close:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, .12);
+}
+
+.overlay-timer {
+  gap: 8px;
+  margin-top: 5px;
+  color: #a4f3bc;
+}
+
+.overlay-timer strong {
+  font-size: 25px;
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .5px;
+}
+
+.overlay-timer span {
+  align-self: flex-end;
+  padding-bottom: 3px;
+  color: rgba(236, 255, 242, .67);
+  font-size: 9px;
+}
+
+.overlay-progress {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 5px;
+  margin-top: 7px;
+  background: rgba(255, 255, 255, .14);
+}
+
+.overlay-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #79eaa0;
+  transition: width .2s linear;
+}
+
+.overlay-message {
+  overflow: hidden;
+  margin-top: 5px;
+  color: rgba(236, 255, 242, .6);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:root[data-animations="false"] .overlay-progress span {
+  transition: none;
+}

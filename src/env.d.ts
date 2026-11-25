@@ -7,6 +7,8 @@ type RuntimeStatus = {
   paused: boolean;
   message: string;
   lastActionAt: number | null;
+  nextActionAt: number | null;
+  intervalMs: number;
 };
 type UpdateState = {
   status: "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
@@ -14,6 +16,16 @@ type UpdateState = {
   version?: string;
 };
 type AppLogEntry = { timestamp: string; level: "info" | "warning" | "error"; message: string };
+type PluginManifest = {
+  id: string;
+  name: string;
+  version: string;
+  author: string;
+  description: string;
+  actions: ActionName[];
+};
+type InstalledPlugin = PluginManifest & { enabled: boolean };
+type CatalogPlugin = PluginManifest & { downloadUrl: string };
 
 declare global {
   interface Window {
@@ -32,6 +44,13 @@ declare global {
       openRepository: () => Promise<void>;
       openTelegram: () => Promise<void>;
       getLogs: () => Promise<AppLogEntry[]>;
+      getPluginCatalog: () => Promise<{ plugins: CatalogPlugin[]; installed: InstalledPlugin[]; warning?: string }>;
+      getPlugins: () => Promise<InstalledPlugin[]>;
+      installPlugin: (pluginId: string) => Promise<InstalledPlugin[]>;
+      setPluginEnabled: (pluginId: string, enabled: boolean) => Promise<InstalledPlugin[]>;
+      removePlugin: (pluginId: string) => Promise<InstalledPlugin[]>;
+      closeOverlay: () => Promise<void>;
+      showOverlay: () => Promise<void>;
       onStatus: (callback: (status: RuntimeStatus) => void) => () => void;
       onUpdate: (callback: (state: UpdateState) => void) => () => void;
       onLog: (callback: (entry: AppLogEntry) => void) => () => void;

@@ -1,0 +1,89 @@
+:root[data-style="minecraft"] {
+  --accent: #76dd54;
+  --accent-bg: #263d27;
+  --border: #343c30;
+}
+
+:root[data-style="oled"] {
+  --bg: #000;
+  --sidebar: #030303;
+  --panel: #080808;
+  --panel2: #111;
+  --border: #252525;
+  --accent: #7edcff;
+  --accent-bg: #10232b;
+}
+
+:root[data-theme="light"][data-style="oled"] {
+  --bg: #f5f7f8;
+  --sidebar: #fff;
+  --panel: #fff;
+  --panel2: #eef1f3;
+  --border: #dce1e5;
+  --accent: #087c9d;
+  --accent-bg: #e3f5fa;
+}
+
+:root[data-style="nether"] {
+  --bg: #160e12;
+  --sidebar: #1d1118;
+  --panel: #24151c;
+  --panel2: #301b22;
+  --border: #4a2930;
+  --accent: #ff7653;
+  --accent-bg: #47211f;
+  --danger: #ff9a79;
+}
+
+:root[data-theme="light"][data-style="nether"] {
+  --bg: #fff5f1;
+  --sidebar: #fff;
+  --panel: #fff;
+  --panel2: #fff0e9;
+  --border: #ecd4cb;
+  --accent: #b63a28;
+  --accent-bg: #fbe4dc;
+  --danger: #a52e2e;
+}
+
+:root[data-style="end"] {
+  --bg: #100e19;
+  --sidebar: #161321;
+  --panel: #1c1829;
+  --panel2: #262038;
+  --border: #3a3150;
+  --accent: #c99aff;
+  --accent-bg: #302347;
+}
+
+:root[data-theme="light"][data-style="end"] {
+  --bg: #f7f2ff;
+  --sidebar: #fff;
+  --panel: #fff;
+  --panel2: #f1eaff;
+  --border: #dfd1f2;
+  --accent: #7546ad;
+  --accent-bg: #eee3fb;
+}
+
+:root[data-style="minecraft"] body,
+:root[data-style="minecraft"] button,
+:root[data-style="minecraft"] input,
+:root[data-style="minecraft"] select {
+  font-family: "Courier New", Consolas, monospace;
+}
+
+:root[data-style="minecraft"] .panel,
+:root[data-style="minecraft"] .action-row,
+:root[data-style="minecraft"] .button {
+  border-radius: 4px;
+}
+
+:root[data-animations="false"] *,
+:root[data-animations="false"] *::before,
+:root[data-animations="false"] *::after {
+  animation-duration: 0s !important;
+  animation-iteration-count: 1 !important;
+  scroll-behavior: auto !important;
+  transition-duration: 0s !important;
+}

@@ -1,0 +1,8 @@
+{
+  "id": "walk-pulse",
+  "name": "Шаг вперёд",
+  "version": "1.0.0",
+  "author": "Xronix",
+  "description": "Добавляет короткое движение вперёд в каждый цикл Anti-AFK.",
+  "actions": ["walk"]
+}
