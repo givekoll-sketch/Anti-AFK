@@ -176,7 +176,7 @@ export default function App() {
         })}</nav>
         <div className="sidebar-bottom">
           <div className="sidebar-status"><span className={`status-dot ${status.running ? "on" : ""}`} /><span>{status.running ? (status.paused ? "На паузе" : "Работает") : "Не запущено"}</span></div>
-          <div className="version">ANTI-AFK · v1.0.2</div>
+          <div className="version">ANTI-AFK · v1.0.3</div>
         </div>
       </aside>
 
@@ -250,7 +250,7 @@ export default function App() {
                   <span className={`switch ${checked ? "enabled" : ""}`}><i/></span>
                 </button>;
               })}</div>
-              <div className="hint"><AlertCircle size={15}/> Действия выполняются только когда выбранное окно Minecraft активно.</div>
+              <div className="hint"><AlertCircle size={15}/> Оставьте выбранное окно Minecraft активным. Первое действие запускается сразу; если фокус ещё не в игре, Anti-AFK повторит попытку автоматически.</div>
             </div>
 
             <div className="right-stack">
@@ -303,30 +303,30 @@ export default function App() {
             </div>
           </div>
           <div className="panel settings-card">
-            <div className="settings-section-head"><span className="settings-icon"><Languages size={18}/></span><div><h2>Язык</h2><p>Язык интерфейса</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.2.2</span></div>
+            <div className="settings-section-head"><span className="settings-icon"><Languages size={18}/></span><div><h2>Язык</h2><p>Язык интерфейса</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.4</span></div>
             <div className="choice-grid language-choices" aria-disabled="true">
               {[
                 ["🇷🇺", "Русский"], ["🇺🇸", "English"], ["🇪🇸", "Español"], ["🇵🇹", "Português"],
                 ["🇰🇷", "한국어"], ["🇯🇵", "日本語"], ["🇨🇳", "中文"], ["🇵🇱", "Polski"]
-              ].map(([flag, label]) => <button className={`choice-chip ${label === "Русский" ? "selected" : ""}`} key={label} disabled title="Доступно в версии v1.0.2.2"><span>{flag}</span>{label}</button>)}
+              ].map(([flag, label]) => <button className={`choice-chip ${label === "Русский" ? "selected" : ""}`} key={label} disabled title="Запланировано в версии v1.0.4"><span>{flag}</span>{label}</button>)}
             </div>
           </div>
           <div className="panel settings-card">
-            <div className="settings-section-head"><span className="settings-icon"><Palette size={18}/></span><div><h2>Стиль интерфейса</h2><p>Выберите оформление приложения</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.2.2</span></div>
+            <div className="settings-section-head"><span className="settings-icon"><Palette size={18}/></span><div><h2>Стиль интерфейса</h2><p>Выберите оформление приложения</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.4</span></div>
             <div className="choice-grid style-choices" aria-disabled="true">
               {[
                 ["minecraft", "Minecraft", "Пиксельный стиль"],
                 ["oled", "OLED", "Глубокий чёрный"],
                 ["nether", "Незер", "Багровые оттенки"],
                 ["end", "Энд", "Сумеречная палитра"]
-              ].map(([id, label, description]) => <button className={`style-chip style-${id}`} key={id} disabled title="Доступно в версии v1.0.2.2"><span className="style-swatch"/><strong>{label}</strong><small>{description}</small></button>)}
+              ].map(([id, label, description]) => <button className={`style-chip style-${id}`} key={id} disabled title="Запланировано в версии v1.0.4"><span className="style-swatch"/><strong>{label}</strong><small>{description}</small></button>)}
             </div>
           </div>
           <div className="panel settings-card animation-setting">
-            <div className="settings-section-head"><span className="settings-icon"><Sparkles size={18}/></span><div><h2>Анимации</h2><p>Включение и отключение анимации интерфейса</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.2.2</span></div>
-            <button className="switch-row" disabled title="Доступно в версии v1.0.2.2"><span>Анимации включены</span><span className="switch enabled"><i/></span></button>
+            <div className="settings-section-head"><span className="settings-icon"><Sparkles size={18}/></span><div><h2>Анимации</h2><p>Включение и отключение анимации интерфейса</p></div><span className="coming-tag"><LockKeyhole size={12}/>v1.0.4</span></div>
+            <button className="switch-row" disabled title="Запланировано в версии v1.0.4"><span>Анимации включены</span><span className="switch enabled"><i/></span></button>
           </div>
-          <div className="hint settings-roadmap"><Info size={15}/> Язык, стили и анимации станут доступны в версии <strong>v1.0.2.2</strong>. При выборе настройки будут применяться сразу с подтверждением.</div>
+          <div className="hint settings-roadmap"><Info size={15}/> Язык, стили и анимации станут доступны в версии <strong>v1.0.4</strong>. При выборе настройки будут применяться сразу с подтверждением.</div>
         </section>}
 
         {page === "plugins" && <section className="page">
@@ -341,7 +341,7 @@ export default function App() {
 
         {page === "about" && <section className="page">
           <div className="page-heading"><div><div className="eyebrow">ПРИЛОЖЕНИЕ</div><h1>О программе</h1><p>Информация о версии и обновлениях Anti-AFK.</p></div></div>
-          <div className="panel about-hero"><img className="about-logo" src={logo} alt="Логотип Anti-AFK" /><div><h2>Anti-AFK</h2><p>Помощник активности для Minecraft</p><span className="version-tag">Версия 1.0.2</span></div></div>
+          <div className="panel about-hero"><img className="about-logo" src={logo} alt="Логотип Anti-AFK" /><div><h2>Anti-AFK</h2><p>Помощник активности для Minecraft</p><span className="version-tag">Версия 1.0.3</span></div></div>
           <div className="panel update-panel"><div className="panel-head"><div><h2>Обновления</h2><p>{update.message}</p></div><Download size={19} className="muted-icon"/></div>
             {update.version && <div className="available-version">Доступная версия: <strong>{update.version}</strong></div>}
             <div className="update-actions"><button className="button secondary" onClick={() => window.antiAfk.checkUpdates()} disabled={update.status === "checking" || update.status === "downloading"}><RefreshCw size={15}/>Проверить обновления</button>

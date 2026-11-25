@@ -1,6 +1,6 @@
 {
   "name": "anti-afk",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "A lightweight Windows desktop companion for Minecraft with configurable actions and automatic updates.",
   "main": "dist-electron/main.js",

@@ -17,6 +17,9 @@ type LogLevel = "info" | "warning" | "error";
 type AppLogEntry = { timestamp: string; level: LogLevel; message: string };
 let updateState: UpdateState = { status: "idle", message: "Проверка обновлений ещё не выполнялась" };
 let logPath = "";
+let lastFocusWarningAt = 0;
+let lastActionErrorAt = 0;
+type ActionAttempt = "performed" | "unfocused" | "error" | "inactive";
 
 function writeLog(level: LogLevel, message: string) {
   const entry: AppLogEntry = { timestamp: new Date().toISOString(), level, message };
@@ -122,11 +125,16 @@ async function detectMinecraftWindows() {
   return windows;
 }
 
-async function performActions() {
-  if (!activeConfig || !runtime.running || runtime.paused) return;
-  const targetTitle = String(activeConfig.target.title).replace(/'/g, "''");
+async function performActions(): Promise<ActionAttempt> {
+  if (!activeConfig || !runtime.running || runtime.paused) return "inactive";
+  const targetPid = Number(activeConfig.target.pid);
   const actions: string[] = activeConfig.actions;
-  if (!actions.length) return;
+  if (!Number.isInteger(targetPid) || targetPid <= 0 || !actions.length) {
+    runtime.message = "Не удалось определить окно Minecraft";
+    writeLog("error", "Действие отменено: неверный PID окна или пустой список действий");
+    publishStatus();
+    return "error";
+  }
 
   // Inputs are deliberately sent only if the selected Minecraft window is foreground.
   const actionLines: string[] = [];
@@ -144,41 +152,55 @@ async function performActions() {
     Add-Type -TypeDefinition @'
     using System;
     using System.Runtime.InteropServices;
-    using System.Text;
     public static class AntiAfkNative {
       [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-      [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+      [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
       [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
       [DllImport("user32.dll")] public static extern void mouse_event(uint flags, int dx, int dy, uint data, UIntPtr extra);
     }
 '@
+    $targetProcess = Get-Process -Id ${targetPid} -ErrorAction SilentlyContinue
+    if (!$targetProcess -or $targetProcess.ProcessName -notmatch 'java|Minecraft') { exit 4 }
     $handle = [AntiAfkNative]::GetForegroundWindow()
-    $buffer = New-Object System.Text.StringBuilder 512
-    [void][AntiAfkNative]::GetWindowText($handle, $buffer, $buffer.Capacity)
-    $foregroundTitle = $buffer.ToString()
-    if ($foregroundTitle -ne '${targetTitle}') { exit 3 }
+    [UInt32]$foregroundPid = 0
+    [void][AntiAfkNative]::GetWindowThreadProcessId($handle, [ref]$foregroundPid)
+    if ($foregroundPid -ne [UInt32]${targetPid}) { exit 3 }
     ${actionLines.join("; ")}
   `;
+  let result: ActionAttempt;
   try {
     await runPowerShell(script);
     runtime.lastActionAt = Date.now();
     runtime.message = "Действие выполнено";
+    lastFocusWarningAt = 0;
+    lastActionErrorAt = 0;
     writeLog("info", `Выполнены действия: ${actions.join(", ")}`);
+    result = "performed";
   } catch (error: any) {
-    runtime.message = error?.code === 3
-      ? "Ожидание фокуса Minecraft"
-      : "Не удалось выполнить действие";
     if (error?.code === 3) {
-      writeLog("warning", "Действие пропущено: окно Minecraft не в фокусе");
+      runtime.message = "Ожидаем фокус Minecraft — переключитесь в игру";
+      if (Date.now() - lastFocusWarningAt > 30000) {
+        writeLog("warning", "Ожидание фокуса выбранного окна Minecraft; повторим попытку автоматически");
+        lastFocusWarningAt = Date.now();
+      }
+      result = "unfocused";
     } else {
-      writeLog("error", `Не удалось выполнить действия: ${getErrorMessage(error)}`);
+      runtime.message = error?.code === 4
+        ? "Окно Minecraft больше недоступно — выберите его заново"
+        : "Не удалось выполнить действие";
+      if (Date.now() - lastActionErrorAt > 30000) {
+        writeLog("error", `Не удалось выполнить действия: ${getErrorMessage(error)}`);
+        lastActionErrorAt = Date.now();
+      }
+      result = "error";
     }
   }
   publishStatus();
+  return result;
 }
 
 function stopRuntime() {
-  if (timer) clearInterval(timer);
+  if (timer) clearTimeout(timer);
   timer = null;
   if (runtime.running) writeLog("info", "Автоматические действия остановлены");
   runtime = { running: false, paused: false, message: "Остановлено", lastActionAt: runtime.lastActionAt };
@@ -186,9 +208,36 @@ function stopRuntime() {
 }
 
 function beginRuntimeLoop() {
-  if (!activeConfig) return;
-  if (timer) clearInterval(timer);
-  timer = setInterval(performActions, Math.max(5000, Number(activeConfig.intervalMs) || 300000));
+  if (!activeConfig || !runtime.running || runtime.paused) return;
+  if (timer) clearTimeout(timer);
+
+  const runCycle = async () => {
+    timer = null;
+    if (!activeConfig || !runtime.running || runtime.paused) return;
+    const attempt = await performActions();
+    if (!runtime.running || runtime.paused) return;
+    const delay = attempt === "performed"
+      ? Math.max(5000, Number(activeConfig.intervalMs) || 300000)
+      : attempt === "unfocused" ? 2000 : 5000;
+    timer = setTimeout(() => { void runCycle(); }, delay);
+  };
+
+  timer = setTimeout(() => { void runCycle(); }, 0);
+}
+
+function togglePause() {
+  if (!runtime.running) return runtime;
+  runtime.paused = !runtime.paused;
+  runtime.message = runtime.paused ? "Пауза" : "Работа продолжена";
+  writeLog("info", runtime.paused ? "Автоматические действия приостановлены" : "Автоматические действия продолжены");
+  if (runtime.paused) {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  } else {
+    beginRuntimeLoop();
+  }
+  publishStatus();
+  return runtime;
 }
 
 function registerHotkeys() {
@@ -197,7 +246,7 @@ function registerHotkeys() {
     if (activeConfig && !runtime.running) {
       runtime.running = true;
       runtime.paused = false;
-      runtime.message = "Запущено горячей клавишей";
+      runtime.message = "Запущено — ожидаем фокус Minecraft";
       writeLog("info", "Запуск по горячей клавише F6");
       beginRuntimeLoop();
       publishStatus();
@@ -205,12 +254,7 @@ function registerHotkeys() {
   });
   const stopRegistered = globalShortcut.register("F7", stopRuntime);
   const pauseRegistered = globalShortcut.register("F8", () => {
-    if (runtime.running) {
-      runtime.paused = !runtime.paused;
-      runtime.message = runtime.paused ? "Пауза" : "Работа продолжена";
-      writeLog("info", runtime.paused ? "Пауза по горячей клавише F8" : "Продолжение по горячей клавише F8");
-      publishStatus();
-    }
+    togglePause();
   });
   if (!startRegistered) writeLog("warning", "Не удалось зарегистрировать горячую клавишу F6");
   if (!stopRegistered) writeLog("warning", "Не удалось зарегистрировать горячую клавишу F7");
@@ -280,27 +324,21 @@ app.whenReady().then(async () => {
     }
   });
   ipcMain.handle("afk:start", async (_event, config) => {
-    if (!config?.target?.title || !Array.isArray(config.actions) || !config.actions.length) {
+    const targetPid = Number(config?.target?.pid);
+    if (!Number.isInteger(targetPid) || targetPid <= 0 || !Array.isArray(config.actions) || !config.actions.length) {
       writeLog("warning", "Запуск отменён: не выбрано окно Minecraft или действие");
-      return { ok: false, message: "Выберите окно Minecraft и хотя бы одно действие" };
+      return { ok: false, message: "Обновите список окон Minecraft, выберите игру и хотя бы одно действие" };
     }
-    if (timer) clearInterval(timer);
+    if (timer) clearTimeout(timer);
     activeConfig = config;
-    runtime = { running: true, paused: false, message: "Запущено — ожидаем окно Minecraft", lastActionAt: null };
+    runtime = { running: true, paused: false, message: "Запущено — ожидаем фокус Minecraft", lastActionAt: null };
     writeLog("info", `Автоматические действия запущены для окна «${config.target.title}»`);
     beginRuntimeLoop();
     publishStatus();
     return { ok: true, message: "Anti-AFK запущен" };
   });
   ipcMain.handle("afk:stop", stopRuntime);
-  ipcMain.handle("afk:pause", () => {
-    if (!runtime.running) return runtime;
-    runtime.paused = !runtime.paused;
-    runtime.message = runtime.paused ? "Пауза" : "Работа продолжена";
-    writeLog("info", runtime.paused ? "Автоматические действия приостановлены" : "Автоматические действия продолжены");
-    publishStatus();
-    return runtime;
-  });
+  ipcMain.handle("afk:pause", togglePause);
   ipcMain.handle("afk:status", () => runtime);
   ipcMain.handle("settings:save", (_event, value) => {
     try {
