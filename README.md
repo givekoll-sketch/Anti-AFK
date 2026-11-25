@@ -1,17 +1,18 @@
 <div align="center">
-  <img src="assets/logo.png" alt="Логотип Anti-AFK" width="180" />
+  <img src="assets/logo.png" alt="Логотип Anti-AFK" width="190" />
 
   <h1>Anti-AFK</h1>
-  <p><strong>Управление активностью в Minecraft Java и Bedrock</strong></p>
-  <p>Выберите окно игры, настройте действия и управляйте ими из лёгкого приложения для Windows.</p>
+  <p><strong>Твой Minecraft. Твои правила активности.</strong></p>
+  <p>Лёгкое приложение для Windows, которое помогает управлять активностью в Minecraft Java и Bedrock.</p>
 
   <p>
-    <a href="https://github.com/givekoll-sketch/Anti-AFK/releases/latest"><img src="https://img.shields.io/github/v/release/givekoll-sketch/Anti-AFK?style=for-the-badge&label=Последняя%20версия" alt="Последний релиз" /></a>
-    <a href="https://github.com/givekoll-sketch/Anti-AFK/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/givekoll-sketch/Anti-AFK/release.yml?style=for-the-badge&label=Сборка" alt="Сборка релиза" /></a>
-    <a href="https://github.com/givekoll-sketch/Anti-AFK/releases"><img src="https://img.shields.io/github/downloads/givekoll-sketch/Anti-AFK/total?style=for-the-badge&label=Загрузки" alt="Загрузки" /></a>
+    <a href="https://github.com/givekoll-sketch/Anti-AFK/releases/latest"><img src="https://img.shields.io/github/v/release/givekoll-sketch/Anti-AFK?style=for-the-badge&amp;label=Latest" alt="Последняя версия" /></a>
+    <a href="https://github.com/givekoll-sketch/Anti-AFK/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/givekoll-sketch/Anti-AFK/release.yml?style=for-the-badge&amp;label=Build" alt="Статус сборки" /></a>
+    <a href="https://github.com/givekoll-sketch/Anti-AFK/releases"><img src="https://img.shields.io/github/downloads/givekoll-sketch/Anti-AFK/total?style=for-the-badge&amp;label=Downloads" alt="Число загрузок" /></a>
   </p>
 
-  <p><a href="https://github.com/givekoll-sketch/Anti-AFK/releases/latest"><strong>Скачать Anti-AFK</strong></a> · <a href="#быстрый-старт">Быстрый старт</a> · <a href="#обновления">Обновления</a> · <a href="#сообщить-о-проблеме">Поддержка</a></p>
+  <p><a href="https://github.com/givekoll-sketch/Anti-AFK/releases/latest"><strong>↓ Скачать для Windows</strong></a> &nbsp;·&nbsp; <a href="#возможности">Возможности</a> &nbsp;·&nbsp; <a href="#быстрый-старт">Быстрый старт</a> &nbsp;·&nbsp; <a href="#обновления">Обновления</a></p>
+  <p><sub>Windows 10/11 · x64 · Minecraft Java &amp; Bedrock</sub></p>
 </div>
 
 ---
