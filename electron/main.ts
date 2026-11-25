@@ -11,13 +11,21 @@ let timer: NodeJS.Timeout | null = null;
 let runtime = { running: false, paused: false, message: "Ожидание запуска", lastActionAt: null as number | null };
 let activeConfig: any = null;
 let settingsPath = "";
+type UpdateStatus = "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
+type UpdateState = { status: UpdateStatus; message: string; version?: string };
+let updateState: UpdateState = { status: "idle", message: "Проверка обновлений ещё не выполнялась" };
 
 function publishStatus() {
   mainWindow?.webContents.send("afk:status-changed", runtime);
 }
 
-function publishUpdate(status: string, message: string, version?: string) {
-  mainWindow?.webContents.send("updates:state", { status, message, version });
+function publishUpdate(status: UpdateStatus, message: string, version?: string) {
+  updateState = { status, message, version };
+  mainWindow?.webContents.send("updates:state", updateState);
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function createWindow() {
@@ -162,18 +170,34 @@ function registerHotkeys() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   settingsPath = path.join(app.getPath("userData"), "settings.json");
-  createWindow();
-  registerHotkeys();
 
   autoUpdater.autoDownload = false;
+  autoUpdater.disableDifferentialDownload = true;
   autoUpdater.on("checking-for-update", () => publishUpdate("checking", "Проверяем обновления…"));
   autoUpdater.on("update-available", info => publishUpdate("available", "Доступна новая версия", info.version));
   autoUpdater.on("update-not-available", () => publishUpdate("latest", "У вас установлена последняя версия"));
-  autoUpdater.on("error", err => publishUpdate("error", `Ошибка обновления: ${err.message}`));
-  autoUpdater.on("download-progress", p => publishUpdate("downloading", `Загрузка обновления: ${Math.round(p.percent)}%`));
+  autoUpdater.on("error", err => publishUpdate("error", `Ошибка обновления: ${err.message}`, updateState.version));
+  autoUpdater.on("download-progress", p =>
+    publishUpdate("downloading", `Загрузка обновления: ${Math.round(p.percent)}%`, updateState.version)
+  );
   autoUpdater.on("update-downloaded", info => publishUpdate("downloaded", "Обновление готово к установке", info.version));
+
+  ipcMain.handle("updates:state", () => updateState);
+  ipcMain.handle("updates:check", async () => {
+    try { await autoUpdater.checkForUpdates(); }
+    catch (error) { publishUpdate("error", `Не удалось проверить обновления: ${getErrorMessage(error)}`); }
+  });
+  ipcMain.handle("updates:download", async () => {
+    try {
+      publishUpdate("downloading", "Подготавливаем загрузку обновления…", updateState.version);
+      await autoUpdater.downloadUpdate();
+    } catch (error) {
+      publishUpdate("error", `Не удалось загрузить обновление: ${getErrorMessage(error)}`, updateState.version);
+    }
+  });
+  ipcMain.handle("updates:install", () => autoUpdater.quitAndInstall());
 
   ipcMain.handle("minecraft:detect", detectMinecraftWindows);
   ipcMain.handle("afk:start", async (_event, config) => {
@@ -202,18 +226,25 @@ app.whenReady().then(() => {
     try { return JSON.parse(fs.readFileSync(settingsPath, "utf8")); }
     catch { return null; }
   });
-  ipcMain.handle("updates:check", async () => {
-    try { await autoUpdater.checkForUpdates(); }
-    catch (error: any) { publishUpdate("error", error.message); }
-  });
-  ipcMain.handle("updates:download", async () => {
-    try { await autoUpdater.downloadUpdate(); }
-    catch (error: any) { publishUpdate("error", error.message); }
-  });
-  ipcMain.handle("updates:install", () => autoUpdater.quitAndInstall());
   ipcMain.handle("app:open-repository", () =>
     shell.openExternal("https://github.com/givekoll-sketch/Anti-AFK")
   );
+
+  if (app.isPackaged) {
+    publishUpdate("checking", "Проверяем наличие обновлений…");
+    const startupCheck = autoUpdater.checkForUpdates().catch(error => {
+      publishUpdate("error", `Не удалось проверить обновления: ${getErrorMessage(error)}`);
+    });
+    let timeout: NodeJS.Timeout | undefined;
+    await Promise.race([
+      startupCheck,
+      new Promise<void>(resolve => { timeout = setTimeout(resolve, 5000); })
+    ]);
+    if (timeout) clearTimeout(timeout);
+  }
+
+  createWindow();
+  registerHotkeys();
 });
 
 app.on("will-quit", () => {

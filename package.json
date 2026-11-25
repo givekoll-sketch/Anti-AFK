@@ -1,6 +1,6 @@
 {
   "name": "anti-afk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "A lightweight Windows desktop companion for Minecraft with configurable actions and automatic updates.",
   "main": "dist-electron/main.js",
@@ -52,6 +52,11 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
+      "signtoolOptions": {
+        "publisherName": [
+          "Xronix"
+        ]
+      },
       "target": [
         {
           "target": "nsis",

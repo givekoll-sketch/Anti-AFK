@@ -8,7 +8,11 @@ type RuntimeStatus = {
   message: string;
   lastActionAt: number | null;
 };
-type UpdateState = { status: string; message: string; version?: string };
+type UpdateState = {
+  status: "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
+  message: string;
+  version?: string;
+};
 
 declare global {
   interface Window {
@@ -21,6 +25,7 @@ declare global {
       saveSettings: (settings: unknown) => Promise<void>;
       loadSettings: () => Promise<any>;
       checkUpdates: () => Promise<void>;
+      getUpdateState: () => Promise<UpdateState>;
       downloadUpdate: () => Promise<void>;
       installUpdate: () => Promise<void>;
       openRepository: () => Promise<void>;

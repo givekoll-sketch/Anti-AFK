@@ -1,0 +1,66 @@
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 20px auto 0;
+  width: calc(100% - 76px);
+  max-width: 1044px;
+  padding: 16px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent-bg) 65%, var(--panel));
+}
+
+.update-banner.warning {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 9%, var(--panel));
+}
+
+.update-banner-copy {
+  min-width: 0;
+}
+
+.update-banner-copy strong {
+  font-size: 12px;
+}
+
+.update-banner-copy p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.update-banner-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.update-warning-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.update-warning-option input {
+  accent-color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .update-banner {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 13px;
+    width: calc(100% - 32px);
+    margin-top: 16px;
+  }
+
+  .update-banner-actions {
+    flex-wrap: wrap;
+  }
+}

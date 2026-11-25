@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("antiAfk", {
   saveSettings: (settings: unknown) => ipcRenderer.invoke("settings:save", settings),
   loadSettings: () => ipcRenderer.invoke("settings:load"),
   checkUpdates: () => ipcRenderer.invoke("updates:check"),
+  getUpdateState: () => ipcRenderer.invoke("updates:state"),
   downloadUpdate: () => ipcRenderer.invoke("updates:download"),
   installUpdate: () => ipcRenderer.invoke("updates:install"),
   openRepository: () => ipcRenderer.invoke("app:open-repository"),
@@ -37,7 +38,11 @@ export type RuntimeStatus = {
   message: string;
   lastActionAt: number | null;
 };
-export type UpdateState = { status: string; message: string; version?: string };
+export type UpdateState = {
+  status: "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
+  message: string;
+  version?: string;
+};
 
 declare global {
   interface Window {
@@ -50,6 +55,7 @@ declare global {
       saveSettings: (settings: unknown) => Promise<void>;
       loadSettings: () => Promise<any>;
       checkUpdates: () => Promise<void>;
+      getUpdateState: () => Promise<UpdateState>;
       downloadUpdate: () => Promise<void>;
       installUpdate: () => Promise<void>;
       openRepository: () => Promise<void>;

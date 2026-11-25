@@ -6,10 +6,15 @@ import {
 } from "lucide-react";
 import logoSmall from "../assets/logo-small.png";
 import logo from "../assets/logo.png";
+import "./update-banner.css";
 
 type MinecraftWindow = { id: string; title: string; processName: string; pid: number };
 type ActionName = "camera" | "jump" | "walk";
-type UpdateState = { status: string; message: string; version?: string };
+type UpdateState = {
+  status: "idle" | "checking" | "available" | "latest" | "downloading" | "downloaded" | "error";
+  message: string;
+  version?: string;
+};
 const actionInfo: { id: ActionName; title: string; desc: string; icon: any }[] = [
   { id: "camera", title: "Поворот камеры", desc: "Небольшое движение мыши в обе стороны", icon: RotateCw },
   { id: "jump", title: "Прыжок", desc: "Короткое нажатие клавиши прыжка", icon: ArrowUp },
@@ -26,6 +31,10 @@ export default function App() {
   const [unit, setUnit] = useState<"seconds" | "minutes" | "hours">("minutes");
   const [status, setStatus] = useState({ running: false, paused: false, message: "Ожидание запуска", lastActionAt: null as number | null });
   const [update, setUpdate] = useState<UpdateState>({ status: "idle", message: "Проверка ещё не выполнялась" });
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [skipUpdateWarning, setSkipUpdateWarning] = useState(false);
+  const [decliningUpdate, setDecliningUpdate] = useState(false);
+  const [updatePromptDismissed, setUpdatePromptDismissed] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [toast, setToast] = useState("");
   const selectedWindow = useMemo(() => windows.find(w => w.id === selected), [windows, selected]);
@@ -38,18 +47,32 @@ export default function App() {
       if (saved.interval) setIntervalValue(saved.interval);
       if (saved.unit) setUnit(saved.unit);
       if (saved.selected) setSelected(saved.selected);
-    });
+      setSkipUpdateWarning(saved.skipUpdateWarning === true);
+    }).catch(() => notify("Не удалось загрузить настройки"))
+      .finally(() => setSettingsLoaded(true));
     window.antiAfk.getStatus().then(setStatus);
     const offStatus = window.antiAfk.onStatus(setStatus);
-    const offUpdate = window.antiAfk.onUpdate(setUpdate);
+    const showUpdate = (state: UpdateState) => {
+      setUpdate(state);
+      if (state.status === "available") {
+        setDecliningUpdate(false);
+        setUpdatePromptDismissed(false);
+      }
+    };
+    const offUpdate = window.antiAfk.onUpdate(showUpdate);
+    window.antiAfk.getUpdateState().then(showUpdate).catch(() => {
+      setUpdate({ status: "error", message: "Не удалось получить состояние обновлений" });
+    });
     scanWindows();
     return () => { offStatus(); offUpdate(); };
   }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
-    window.antiAfk.saveSettings({ theme, actions, interval, unit, selected }).catch(() => {});
-  }, [theme, actions, interval, unit, selected]);
+    if (!settingsLoaded) return;
+    window.antiAfk.saveSettings({ theme, actions, interval, unit, selected, skipUpdateWarning })
+      .catch(() => notify("Не удалось сохранить настройки"));
+  }, [theme, actions, interval, unit, selected, skipUpdateWarning, settingsLoaded]);
 
   async function scanWindows() {
     setDetecting(true);
@@ -84,6 +107,26 @@ export default function App() {
     { id: "keys" as const, label: "Горячие клавиши", icon: Keyboard },
     { id: "about" as const, label: "О программе", icon: Info }
   ];
+  const showUpdateBanner = settingsLoaded && !updatePromptDismissed &&
+    (update.status === "available" || update.status === "downloading" || update.status === "downloaded");
+
+  function declineUpdate() {
+    if (skipUpdateWarning) {
+      setUpdatePromptDismissed(true);
+      return;
+    }
+    setDecliningUpdate(true);
+  }
+
+  function downloadUpdate() {
+    setDecliningUpdate(false);
+    void window.antiAfk.downloadUpdate();
+  }
+
+  function acknowledgeDecline() {
+    setDecliningUpdate(false);
+    setUpdatePromptDismissed(true);
+  }
 
   return (
     <div className="app-shell">
@@ -101,7 +144,7 @@ export default function App() {
         })}</nav>
         <div className="sidebar-bottom">
           <div className="sidebar-status"><span className={`status-dot ${status.running ? "on" : ""}`} /><span>{status.running ? (status.paused ? "На паузе" : "Работает") : "Не запущено"}</span></div>
-          <div className="version">ANTI-AFK · v1.0.0</div>
+          <div className="version">ANTI-AFK · v1.0.1</div>
         </div>
       </aside>
 
@@ -112,6 +155,43 @@ export default function App() {
             {theme === "dark" ? <Sun size={17} /> : <Moon size={17} />}
           </button>
         </header>
+
+        {showUpdateBanner && <section className={`update-banner ${decliningUpdate ? "warning" : ""}`} aria-live="polite">
+          <div className="update-banner-copy">
+            <strong>{decliningUpdate
+              ? "Вы отказались от обновления"
+              : update.status === "available"
+                ? `Доступно новое обновление (${update.version})`
+                : update.status === "downloaded"
+                  ? `Обновление ${update.version} готово`
+                  : `Загружаем обновление ${update.version ?? ""}`}</strong>
+            <p>{decliningUpdate
+              ? "При отказе вы не получите новые функции, а мы не гарантируем безопасность старых версий."
+              : update.status === "available"
+                ? "Установите обновление, чтобы получить новые функции и исправления."
+                : update.message}</p>
+            {decliningUpdate && <label className="update-warning-option">
+              <input
+                type="checkbox"
+                checked={skipUpdateWarning}
+                onChange={event => setSkipUpdateWarning(event.target.checked)}
+              />
+              Не показывать это сообщение больше
+            </label>}
+          </div>
+          <div className="update-banner-actions">
+            {decliningUpdate ? <>
+              <button className="button secondary" onClick={acknowledgeDecline}>Соглашаюсь</button>
+              <button className="button primary" onClick={downloadUpdate}><Download size={15}/>Установить</button>
+            </> : update.status === "available" ? <>
+              <button className="button primary" onClick={downloadUpdate}><Download size={15}/>Установить</button>
+              <button className="button secondary" onClick={declineUpdate}>Отменить</button>
+            </> : update.status === "downloaded" ? <>
+              <button className="button primary" onClick={() => window.antiAfk.installUpdate()}>Перезапустить и установить</button>
+              <button className="button secondary" onClick={() => setUpdatePromptDismissed(true)}>Позже</button>
+            </> : <button className="button secondary" disabled>{update.message}</button>}
+          </div>
+        </section>}
 
         {page === "home" && <section className="page">
           <div className="page-heading">
@@ -173,11 +253,11 @@ export default function App() {
 
         {page === "about" && <section className="page">
           <div className="page-heading"><div><div className="eyebrow">ПРИЛОЖЕНИЕ</div><h1>О программе</h1><p>Информация о версии и обновлениях Anti-AFK.</p></div></div>
-          <div className="panel about-hero"><img className="about-logo" src={logo} alt="Логотип Anti-AFK" /><div><h2>Anti-AFK</h2><p>Помощник активности для Minecraft</p><span className="version-tag">Версия 1.0.0</span></div></div>
+          <div className="panel about-hero"><img className="about-logo" src={logo} alt="Логотип Anti-AFK" /><div><h2>Anti-AFK</h2><p>Помощник активности для Minecraft</p><span className="version-tag">Версия 1.0.1</span></div></div>
           <div className="panel update-panel"><div className="panel-head"><div><h2>Обновления</h2><p>{update.message}</p></div><Download size={19} className="muted-icon"/></div>
             {update.version && <div className="available-version">Доступная версия: <strong>{update.version}</strong></div>}
             <div className="update-actions"><button className="button secondary" onClick={() => window.antiAfk.checkUpdates()} disabled={update.status === "checking" || update.status === "downloading"}><RefreshCw size={15}/>Проверить обновления</button>
-              {update.status === "available" && <button className="button primary" onClick={() => window.antiAfk.downloadUpdate()}><Download size={15}/>Скачать обновление</button>}
+              {update.status === "available" && <button className="button primary" onClick={() => window.antiAfk.downloadUpdate()}><Download size={15}/>Установить</button>}
               {update.status === "downloaded" && <button className="button primary" onClick={() => window.antiAfk.installUpdate()}>Установить и перезапустить</button>}</div>
             <div className="field-note">Новые версии публикуются в GitHub Releases и устанавливаются прямо из приложения.</div>
           </div>
