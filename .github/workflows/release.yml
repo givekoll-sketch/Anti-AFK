@@ -32,6 +32,9 @@ jobs:
         with:
           name: Anti-AFK ${{ github.ref_name }} — Minecraft Activity Manager
           body_path: RELEASE_NOTES.md
-          files: release/*
+          files: |
+            release/Anti-AFK-Setup-*.exe
+            release/Anti-AFK-Setup-*.exe.blockmap
+            release/latest.yml
           draft: false
           prerelease: false
